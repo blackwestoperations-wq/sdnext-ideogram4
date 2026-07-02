@@ -14,15 +14,15 @@ RUN git clone https://github.com/vladmandic/sdnext.git .
 RUN python3 -m venv venv
 ENV PATH="/app/venv/bin:$PATH"
 
-# Install SD.Next's own deps ahead of time (bakes into image, faster cold start)
 RUN python3 launch.py --skip-git --debug --test || true
 
-# Install huggingface-hub CLI to pull weights at build time
-RUN pip install -U "huggingface_hub[cli]"
+RUN pip install -U huggingface_hub
 
-# Pull Ideogram 4 weights into the image (choose ONE variant matching your GPU VRAM)
-# fp8 for 48GB+ cards, nf4 for ~20GB cards
-RUN huggingface-cli download ideogram-ai/ideogram-4-fp8 \
+# Koyeb exposes env vars set in the dashboard during build,
+# but Dockerfile build stages need an explicit ARG to receive it
+ARG HF_TOKEN
+RUN hf auth login --token "$HF_TOKEN" && \
+    hf download ideogram-ai/ideogram-4-fp8 \
     --local-dir /app/models/checkpoints/ideogram-4-fp8
 
 EXPOSE 7860
