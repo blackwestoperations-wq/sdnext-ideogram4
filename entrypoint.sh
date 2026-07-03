@@ -1,9 +1,28 @@
+bash
+
+cat > /home/claude/comfyui-koyeb/entrypoint.sh << 'EOF'
 #!/bin/bash
 set -e
 
 echo "========================================"
 echo "  ComfyUI + Manager  |  Koyeb Startup"
 echo "========================================"
+
+# Use explicit python path — avoids picking up wrong system Python
+PYTHON=$(which python3)
+echo "Python: $PYTHON ($($PYTHON --version))"
+
+# Quick CUDA check — won't crash if GPU not visible yet, just informs
+$PYTHON -c "
+import torch
+print('PyTorch:', torch.__version__)
+print('CUDA available:', torch.cuda.is_available())
+if torch.cuda.is_available():
+    print('GPU:', torch.cuda.get_device_name(0))
+    print('VRAM:', round(torch.cuda.get_device_properties(0).total_memory / 1024**3, 1), 'GB')
+else:
+    print('WARNING: CUDA not available — ComfyUI will run on CPU (very slow)')
+" || echo "WARNING: torch check failed"
 
 export HF_HUB_ENABLE_HF_TRANSFER=1
 
@@ -33,10 +52,7 @@ download_model() {
 }
 
 # ── Download models in the background ────────────────────────────────────────
-# This lets ComfyUI start immediately so Koyeb health checks pass.
-# ComfyUI will wait for model files when a workflow is first run.
 (
-  echo ""
   echo "--- Background model downloads starting ---"
   while IFS=' ' read -r URL DEST || [ -n "$URL" ]; do
     [[ -z "$URL" || "$URL" == \#* ]] && continue
@@ -45,11 +61,9 @@ download_model() {
   echo "--- All models downloaded ---"
 ) &
 
-# ── Launch ComfyUI immediately ────────────────────────────────────────────────
-# Starts right away so Koyeb health checks pass while models download in background.
-echo ""
+# ── Launch ComfyUI immediately so health checks pass ─────────────────────────
 echo "Starting ComfyUI on port 8188..."
-exec python3 /app/main.py \
+exec $PYTHON /app/main.py \
   --listen 0.0.0.0 \
   --port 8188 \
   --enable-cors-header "*"
