@@ -1,38 +1,13 @@
-# AI models
-*.safetensors
-*.ckpt
-*.pt
-*.pth
-*.bin
-*.gguf
-
-# Python
-__pycache__/
+.git
+.github
+__pycache__
 *.pyc
 *.pyo
-*.egg-info/
-.pytest_cache/
-.mypy_cache/
-
-# Git
-.git
-.gitignore
-
-# Environment
+*.pyd
+*.egg-info
 .env
-.env.*
-
-# OS files
-.DS_Store
-Thumbs.db
-
-# IDE
-.vscode/
-.idea/
-
-# Output folders
-output/
-input/
-
-# Logs
-*.log
+models
+output
+input
+user
+workspace
