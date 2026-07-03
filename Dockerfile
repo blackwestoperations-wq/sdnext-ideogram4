@@ -1,13 +1,14 @@
-FROM nvidia/cuda:12.1.1-cudnn8-runtime-ubuntu22.04
+FROM nvidia/cuda:11.8.0-cudnn8-runtime-ubuntu22.04
 
 ENV DEBIAN_FRONTEND=noninteractive
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
 
-# System deps
+# System dependencies
 RUN apt-get update && apt-get install -y \
-    python3 python3-pip git wget curl \
-    libgl1 libglib2.0-0 aria2 \
+    python3 python3-pip python3-dev \
+    git wget curl aria2 \
+    libgl1 libglib2.0-0 libsm6 libxrender1 libxext6 \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
@@ -15,30 +16,36 @@ WORKDIR /app
 # Clone ComfyUI
 RUN git clone https://github.com/comfyanonymous/ComfyUI.git /app
 
+# Install PyTorch — cu118 has the widest NVIDIA driver compatibility
+# Supports drivers as old as 450.x, covers all Koyeb GPU instances
 RUN pip3 install --no-cache-dir \
     torch==2.3.1 torchvision==0.18.1 torchaudio==2.3.1 \
-    --index-url https://download.pytorch.org/whl/cu121
+    --index-url https://download.pytorch.org/whl/cu118
 
+# Install ComfyUI Python dependencies
 RUN pip3 install --no-cache-dir -r /app/requirements.txt
 
-# Install ComfyUI Manager
+# Install ComfyUI-Manager
 RUN git clone https://github.com/ltdrdata/ComfyUI-Manager.git \
     /app/custom_nodes/ComfyUI-Manager \
     && pip3 install --no-cache-dir \
     -r /app/custom_nodes/ComfyUI-Manager/requirements.txt
 
-# Install huggingface_hub for model downloads
+# Install download tools
 RUN pip3 install --no-cache-dir huggingface_hub hf_transfer
 
-# Create model directories
+# Pre-create all model directories ComfyUI expects
 RUN mkdir -p \
     /app/models/checkpoints \
+    /app/models/diffusion_models \
+    /app/models/text_encoders \
     /app/models/vae \
     /app/models/loras \
     /app/models/controlnet \
-    /app/models/diffusion_models \
+    /app/models/unet \
     /app/models/clip \
-    /app/models/unet
+    /app/output \
+    /app/input
 
 COPY entrypoint.sh /app/entrypoint.sh
 COPY models.txt /app/models.txt
