@@ -1,37 +1,20 @@
 #!/usr/bin/env bash
 set -e
 
-echo "================================================="
-echo "      ComfyUI + DigitalOcean Spaces Startup"
-echo "================================================="
-
 WORKSPACE=/workspace
 REMOTE=dospaces
 
-echo ""
-echo "Python: $(python --version)"
-echo ""
-
-# ------------------------------------------------------------------
-# GPU Information
-# ------------------------------------------------------------------
+echo "=========================================="
+echo "ComfyUI + DigitalOcean Spaces"
+echo "=========================================="
 
 python - <<EOF
 import torch
-
 print("PyTorch:", torch.__version__)
 print("CUDA:", torch.cuda.is_available())
-
 if torch.cuda.is_available():
-    print("GPU:", torch.cuda.get_device_name(0))
-    print("VRAM:",
-          round(torch.cuda.get_device_properties(0).total_memory/1024**3,1),
-          "GB")
+    print(torch.cuda.get_device_name(0))
 EOF
-
-# ------------------------------------------------------------------
-# Configure rclone
-# ------------------------------------------------------------------
 
 mkdir -p /root/.config/rclone
 
@@ -47,87 +30,72 @@ region = ${AWS_DEFAULT_REGION}
 acl = private
 EOF
 
-echo ""
-echo "Connecting to DigitalOcean Spaces..."
+echo "Downloading workspace..."
 
-# ------------------------------------------------------------------
-# Sync DOWN from Spaces
-# ------------------------------------------------------------------
+mkdir -p ${WORKSPACE}
 
 if rclone lsd ${REMOTE}:${SPACES_BUCKET}; then
-    echo ""
-    echo "Syncing workspace from DigitalOcean Spaces..."
 
-    rclone sync \
+    rclone copy \
         ${REMOTE}:${SPACES_BUCKET} \
         ${WORKSPACE} \
         --fast-list \
-        --transfers 8 \
-        --checkers 16 \
-        --progress
-else
-    echo ""
-    echo "Bucket is empty."
-fi
+        --transfers 16 \
+        --checkers 16
 
-# ------------------------------------------------------------------
-# Make sure folders exist
-# ------------------------------------------------------------------
+fi
 
 mkdir -p \
-    ${WORKSPACE}/models \
-    ${WORKSPACE}/custom_nodes \
-    ${WORKSPACE}/input \
-    ${WORKSPACE}/output \
-    ${WORKSPACE}/user \
-    ${WORKSPACE}/workflows \
-    ${WORKSPACE}/configs
+${WORKSPACE}/models \
+${WORKSPACE}/custom_nodes \
+${WORKSPACE}/user \
+${WORKSPACE}/input \
+${WORKSPACE}/output \
+${WORKSPACE}/workflows
 
-# ------------------------------------------------------------------
-# Copy persistent config
-# ------------------------------------------------------------------
+rm -rf /app/models
+ln -s ${WORKSPACE}/models /app/models
 
-if [ -f ${WORKSPACE}/configs/config.ini ]; then
-    mkdir -p /app/user/__manager
-    cp ${WORKSPACE}/configs/config.ini \
-       /app/user/__manager/config.ini
+rm -rf /app/custom_nodes
+ln -s ${WORKSPACE}/custom_nodes /app/custom_nodes
+
+rm -rf /app/user
+ln -s ${WORKSPACE}/user /app/user
+
+rm -rf /app/output
+ln -s ${WORKSPACE}/output /app/output
+
+rm -rf /app/input
+ln -s ${WORKSPACE}/input /app/input
+
+if [ ! -d /app/custom_nodes/ComfyUI-Manager ]; then
+    git clone https://github.com/ltdrdata/ComfyUI-Manager.git \
+    /app/custom_nodes/ComfyUI-Manager
+
+    pip install \
+    -r /app/custom_nodes/ComfyUI-Manager/requirements.txt
 fi
-
-# ------------------------------------------------------------------
-# Copy persistent custom nodes
-# ------------------------------------------------------------------
-
-if [ -d ${WORKSPACE}/custom_nodes ]; then
-    rsync -a \
-        ${WORKSPACE}/custom_nodes/ \
-        /app/custom_nodes/
-fi
-
-# ------------------------------------------------------------------
-# Background sync every 60 seconds
-# ------------------------------------------------------------------
 
 (
 while true
 do
+sleep 60
 
-    sleep 60
+echo "Uploading changes..."
 
-    rclone sync \
-        ${WORKSPACE} \
-        ${REMOTE}:${SPACES_BUCKET} \
-        --fast-list \
-        --transfers 8 \
-        --checkers 16
+rclone copy \
+${WORKSPACE} \
+${REMOTE}:${SPACES_BUCKET} \
+--fast-list \
+--transfers 16 \
+--checkers 16
 
 done
 ) &
 
-echo ""
 echo "Starting ComfyUI..."
-echo ""
 
-exec python main.py \
-    --listen 0.0.0.0 \
-    --port 8188 \
-    --extra-model-paths-config ${WORKSPACE}/extra_model_paths.yaml
+exec python /app/main.py \
+--listen 0.0.0.0 \
+--port 8188 \
+--extra-model-paths-config /workspace/extra_model_paths.yaml
