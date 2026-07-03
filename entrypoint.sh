@@ -30,6 +30,13 @@ region = ${AWS_DEFAULT_REGION}
 acl = private
 EOF
 
+echo "Cleaning up stale partial files in bucket..."
+rclone delete \
+    ${REMOTE}:${SPACES_BUCKET} \
+    --include "*.partial" \
+    --s3-no-check-bucket \
+    2>/dev/null || true
+
 echo "Downloading workspace..."
 
 mkdir -p ${WORKSPACE}
@@ -42,7 +49,9 @@ if rclone lsd ${REMOTE}:${SPACES_BUCKET} --s3-no-check-bucket; then
         --fast-list \
         --transfers 16 \
         --checkers 16 \
-        --s3-no-check-bucket
+        --s3-no-check-bucket \
+        --temp-dir /tmp \
+        --exclude "*.partial"
 
 fi
 
@@ -90,7 +99,8 @@ do
         --fast-list \
         --transfers 16 \
         --checkers 16 \
-        --s3-no-check-bucket
+        --s3-no-check-bucket \
+        --exclude "*.partial"
 
 done
 ) &
