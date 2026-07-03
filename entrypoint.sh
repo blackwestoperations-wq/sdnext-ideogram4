@@ -1,21 +1,27 @@
 #!/usr/bin/env bash
-set -e
+set -euo pipefail
 
-WORKSPACE=/workspace
-REMOTE=dospaces
+WORKSPACE="/workspace"
+REMOTE="dospaces"
 
 echo "=========================================="
-echo "ComfyUI + DigitalOcean Spaces"
+echo "ComfyUI + DigitalOcean Spaces (STABLE MODE)"
 echo "=========================================="
 
+# -----------------------------
+# GPU CHECK
+# -----------------------------
 python - <<EOF
 import torch
 print("PyTorch:", torch.__version__)
-print("CUDA:", torch.cuda.is_available())
+print("CUDA Available:", torch.cuda.is_available())
 if torch.cuda.is_available():
-    print(torch.cuda.get_device_name(0))
+    print("GPU:", torch.cuda.get_device_name(0))
 EOF
 
+# -----------------------------
+# RCLONE CONFIG
+# -----------------------------
 mkdir -p /root/.config/rclone
 
 cat >/root/.config/rclone/rclone.conf <<EOF
@@ -30,81 +36,90 @@ region = ${AWS_DEFAULT_REGION}
 acl = private
 EOF
 
-echo "Cleaning up stale partial files in bucket..."
-rclone delete \
-    ${REMOTE}:${SPACES_BUCKET} \
-    --include "*.partial" \
-    --s3-no-check-bucket \
-    2>/dev/null || true
+# -----------------------------
+# WORKSPACE SETUP
+# -----------------------------
+mkdir -p ${WORKSPACE}/{models,custom_nodes,user,input,output,workflows}
 
-echo "Downloading workspace..."
+# -----------------------------
+# CLEAN PARTIAL FILES (SAFE)
+# -----------------------------
+echo "Cleaning stale partial files..."
+rclone delete ${REMOTE}:${SPACES_BUCKET} \
+  --include "*.partial" \
+  --include "*.tmp" \
+  --s3-no-check-bucket \
+  || true
 
-mkdir -p ${WORKSPACE}
+# -----------------------------
+# BOOTSTRAP DOWNLOAD (ONE-TIME SAFE SYNC)
+# -----------------------------
+echo "Downloading workspace (BOOT STRAP ONLY)..."
 
-if rclone lsd ${REMOTE}:${SPACES_BUCKET} --s3-no-check-bucket; then
-
+if rclone lsd ${REMOTE}:${SPACES_BUCKET} --s3-no-check-bucket >/dev/null 2>&1; then
     rclone copy \
         ${REMOTE}:${SPACES_BUCKET} \
         ${WORKSPACE} \
         --fast-list \
-        --transfers 16 \
-        --checkers 16 \
+        --transfers 8 \
+        --checkers 8 \
         --s3-no-check-bucket \
         --temp-dir /tmp \
-        --exclude "*.partial"
-
+        --exclude "*.partial" \
+        --exclude "*.tmp" \
+        --log-level INFO
 fi
 
-mkdir -p \
-${WORKSPACE}/models \
-${WORKSPACE}/custom_nodes \
-${WORKSPACE}/user \
-${WORKSPACE}/input \
-${WORKSPACE}/output \
-${WORKSPACE}/workflows
+# -----------------------------
+# SYMBOLIC LINKS (COMFYUI EXPECTED PATHS)
+# -----------------------------
+ln -sfn ${WORKSPACE}/models /app/models
+ln -sfn ${WORKSPACE}/custom_nodes /app/custom_nodes
+ln -sfn ${WORKSPACE}/user /app/user
+ln -sfn ${WORKSPACE}/output /app/output
+ln -sfn ${WORKSPACE}/input /app/input
 
-rm -rf /app/models
-ln -s ${WORKSPACE}/models /app/models
-
-rm -rf /app/custom_nodes
-ln -s ${WORKSPACE}/custom_nodes /app/custom_nodes
-
-rm -rf /app/user
-ln -s ${WORKSPACE}/user /app/user
-
-rm -rf /app/output
-ln -s ${WORKSPACE}/output /app/output
-
-rm -rf /app/input
-ln -s ${WORKSPACE}/input /app/input
-
+# -----------------------------
+# COMFYUI MANAGER (SAFE INSTALL)
+# -----------------------------
 if [ ! -d /app/custom_nodes/ComfyUI-Manager ]; then
+    echo "Installing ComfyUI-Manager..."
     git clone https://github.com/ltdrdata/ComfyUI-Manager.git \
-    /app/custom_nodes/ComfyUI-Manager
+        /app/custom_nodes/ComfyUI-Manager
 
-    pip install \
-    -r /app/custom_nodes/ComfyUI-Manager/requirements.txt
+    pip install -r /app/custom_nodes/ComfyUI-Manager/requirements.txt
 fi
 
-(
-while true
-do
-    sleep 60
+# -----------------------------
+# OUTPUT SYNC WORKER (SAFE ONE-WAY)
+# -----------------------------
+echo "Starting background output sync..."
 
-    echo "Uploading changes..."
+sync_outputs () {
+    while true; do
+        sleep 60
 
-    rclone copy \
-        ${WORKSPACE} \
-        ${REMOTE}:${SPACES_BUCKET} \
-        --fast-list \
-        --transfers 16 \
-        --checkers 16 \
-        --s3-no-check-bucket \
-        --exclude "*.partial"
+        echo "[SYNC] Uploading outputs..."
 
-done
-) &
+        rclone copy \
+            ${WORKSPACE}/output \
+            ${REMOTE}:${SPACES_BUCKET}/output \
+            --fast-list \
+            --transfers 4 \
+            --checkers 4 \
+            --s3-no-check-bucket \
+            --exclude "*.partial" \
+            --exclude "*.tmp" \
+            --min-age 10s \
+            --log-level ERROR || true
+    done
+}
 
+sync_outputs &
+
+# -----------------------------
+# START COMFYUI
+# -----------------------------
 echo "Starting ComfyUI..."
 
 exec python /app/main.py \
