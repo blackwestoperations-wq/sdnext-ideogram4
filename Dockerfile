@@ -1,64 +1,128 @@
-FROM pytorch/pytorch:2.9.0-cuda12.8-cudnn9-runtime
+#!/usr/bin/env bash
+set -euo pipefail
 
-ENV DEBIAN_FRONTEND=noninteractive
-ENV PYTHONDONTWRITEBYTECODE=1
-ENV PYTHONUNBUFFERED=1
-ENV PIP_NO_CACHE_DIR=1
-ENV HF_HUB_ENABLE_HF_TRANSFER=1
+WORKSPACE="/workspace"
+REMOTE="dospaces"
 
-WORKDIR /app
+echo "=========================================="
+echo "ComfyUI + DigitalOcean Spaces (STABLE MODE)"
+echo "=========================================="
 
-RUN apt-get update && apt-get install -y \
-    git \
-    git-lfs \
-    curl \
-    wget \
-    unzip \
-    ffmpeg \
-    build-essential \
-    rsync \
-    ca-certificates \
-    libgl1 \
-    libglib2.0-0 \
-    libsm6 \
-    libxrender1 \
-    libxext6 \
-    fuse \
- && rm -rf /var/lib/apt/lists/*
+# -----------------------------
+# GPU CHECK
+# -----------------------------
+python - <<EOF
+import torch
+print("PyTorch:", torch.__version__)
+print("CUDA Available:", torch.cuda.is_available())
+if torch.cuda.is_available():
+    print("GPU:", torch.cuda.get_device_name(0))
+EOF
 
-RUN git lfs install
+# -----------------------------
+# RCLONE CONFIG
+# -----------------------------
+mkdir -p /root/.config/rclone
 
-RUN curl https://rclone.org/install.sh | bash
+cat >/root/.config/rclone/rclone.conf <<EOF
+[$REMOTE]
+type = s3
+provider = DigitalOcean
+env_auth = false
+access_key_id = ${AWS_ACCESS_KEY_ID}
+secret_access_key = ${AWS_SECRET_ACCESS_KEY}
+endpoint = ams3.digitaloceanspaces.com
+region = ${AWS_DEFAULT_REGION}
+acl = private
+EOF
 
-RUN git clone https://github.com/comfyanonymous/ComfyUI.git .
+# -----------------------------
+# WORKSPACE SETUP
+# -----------------------------
+mkdir -p ${WORKSPACE}/{models,custom_nodes,user,input,output,workflows}
 
-RUN python -m pip install --upgrade pip setuptools wheel
+# -----------------------------
+# CLEAN PARTIAL FILES (SAFE)
+# -----------------------------
+echo "Cleaning stale partial files..."
+rclone delete ${REMOTE}:${SPACES_BUCKET} \
+  --include "*.partial" \
+  --include "*.tmp" \
+  --s3-no-check-bucket \
+  || true
 
-RUN pip install -r requirements.txt
+# -----------------------------
+# BOOTSTRAP DOWNLOAD (ONE-TIME SAFE SYNC)
+# -----------------------------
+echo "Downloading workspace (BOOT STRAP ONLY)..."
 
-RUN git clone https://github.com/ltdrdata/ComfyUI-Manager.git \
-    custom_nodes/ComfyUI-Manager
+if rclone lsd ${REMOTE}:${SPACES_BUCKET} --s3-no-check-bucket >/dev/null 2>&1; then
+    rclone copy \
+        ${REMOTE}:${SPACES_BUCKET} \
+        ${WORKSPACE} \
+        --fast-list \
+        --transfers 8 \
+        --checkers 8 \
+        --s3-no-check-bucket \
+        --temp-dir /tmp \
+        --exclude "*.partial" \
+        --exclude "*.tmp" \
+        --log-level INFO
+fi
 
-RUN pip install \
-    -r custom_nodes/ComfyUI-Manager/requirements.txt
+# -----------------------------
+# SYMBOLIC LINKS (COMFYUI EXPECTED PATHS)
+# -----------------------------
+ln -sfn ${WORKSPACE}/models /app/models
+ln -sfn ${WORKSPACE}/custom_nodes /app/custom_nodes
+ln -sfn ${WORKSPACE}/user /app/user
+ln -sfn ${WORKSPACE}/output /app/output
+ln -sfn ${WORKSPACE}/input /app/input
 
-RUN pip install \
-    huggingface_hub \
-    hf_transfer
+# -----------------------------
+# COMFYUI MANAGER (SAFE INSTALL)
+# -----------------------------
+if [ ! -d /app/custom_nodes/ComfyUI-Manager ]; then
+    echo "Installing ComfyUI-Manager..."
+    git clone https://github.com/ltdrdata/ComfyUI-Manager.git \
+        /app/custom_nodes/ComfyUI-Manager
 
-RUN mkdir -p \
-    /workspace/models \
-    /workspace/custom_nodes \
-    /workspace/user \
-    /workspace/input \
-    /workspace/output \
-    /workspace/workflows
+    pip install -r /app/custom_nodes/ComfyUI-Manager/requirements.txt
+fi
 
-COPY entrypoint.sh /entrypoint.sh
-COPY extra_model_paths.yaml /workspace/extra_model_paths.yaml
+# -----------------------------
+# OUTPUT SYNC WORKER (SAFE ONE-WAY)
+# -----------------------------
+echo "Starting background output sync..."
 
-RUN chmod +x /entrypoint.sh
+sync_outputs () {
+    while true; do
+        sleep 60
 
-EXPOSE 8188
+        echo "[SYNC] Uploading outputs..."
 
-ENTRYPOINT ["/entrypoint.sh"]
+        rclone copy \
+            ${WORKSPACE}/output \
+            ${REMOTE}:${SPACES_BUCKET}/output \
+            --fast-list \
+            --transfers 4 \
+            --checkers 4 \
+            --s3-no-check-bucket \
+            --exclude "*.partial" \
+            --exclude "*.tmp" \
+            --min-age 10s \
+            --log-level ERROR || true
+    done
+}
+
+sync_outputs &
+
+# -----------------------------
+# START COMFYUI
+# -----------------------------
+echo "Starting ComfyUI..."
+
+exec python /app/main.py \
+    --listen 0.0.0.0 \
+    --port 8188 \
+    --extra-model-paths-config /workspace/extra_model_paths.yaml
