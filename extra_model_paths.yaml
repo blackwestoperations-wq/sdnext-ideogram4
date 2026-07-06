@@ -1,22 +1,18 @@
-# /workspace/extra_model_paths.yaml
-# Tells ComfyUI to look for models under /workspace/models/
-workspace:
-    base_path: /workspace/
-    checkpoints: models/checkpoints/
-    vae: models/vae/
-    loras: models/loras/
-    clip: models/clip/
-    unet: models/unet/
-    clip_vision: models/clip_vision/
-    style_models: models/style_models/
-    embeddings: models/embeddings/
-    controlnet: models/controlnet/
-    upscale_models: models/upscale_models/
-    diffusion_models: models/diffusion_models/
-    text_encoders: models/text_encoders/
-    gligen: models/gligen/
-    hypernetworks: models/hypernetworks/
-    photomaker: models/photomaker/
-    classifiers: models/classifiers/
-    mmdets: models/mmdets/
-    sam: models/sam/
+checkpoints: /workspace/models/checkpoints/
+vae: /workspace/models/vae/
+loras: /workspace/models/loras/
+clip: /workspace/models/clip/
+unet: /workspace/models/unet/
+clip_vision: /workspace/models/clip_vision/
+style_models: /workspace/models/style_models/
+embeddings: /workspace/models/embeddings/
+controlnet: /workspace/models/controlnet/
+upscale_models: /workspace/models/upscale_models/
+diffusion_models: /workspace/models/diffusion_models/
+text_encoders: /workspace/models/text_encoders/
+gligen: /workspace/models/gligen/
+hypernetworks: /workspace/models/hypernetworks/
+photomaker: /workspace/models/photomaker/
+classifiers: /workspace/models/classifiers/
+mmdets: /workspace/models/mmdets/
+sam: /workspace/models/sam/
