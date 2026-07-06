@@ -1,19 +1,22 @@
-comfyui:
-  base_path: /workspace
-
-  checkpoints: models/checkpoints
-  clip: models/clip
-  clip_vision: models/clip_vision
-  configs: models/configs
-  controlnet: models/controlnet
-  diffusion_models: models/diffusion_models
-  embeddings: models/embeddings
-  gligen: models/gligen
-  hypernetworks: models/hypernetworks
-  loras: models/loras
-  style_models: models/style_models
-  text_encoders: models/text_encoders
-  unet: models/unet
-  upscale_models: models/upscale_models
-  vae: models/vae
-  vae_approx: models/vae_approx
+# /workspace/extra_model_paths.yaml
+# Tells ComfyUI to look for models under /workspace/models/
+workspace:
+    base_path: /workspace/
+    checkpoints: models/checkpoints/
+    vae: models/vae/
+    loras: models/loras/
+    clip: models/clip/
+    unet: models/unet/
+    clip_vision: models/clip_vision/
+    style_models: models/style_models/
+    embeddings: models/embeddings/
+    controlnet: models/controlnet/
+    upscale_models: models/upscale_models/
+    diffusion_models: models/diffusion_models/
+    text_encoders: models/text_encoders/
+    gligen: models/gligen/
+    hypernetworks: models/hypernetworks/
+    photomaker: models/photomaker/
+    classifiers: models/classifiers/
+    mmdets: models/mmdets/
+    sam: models/sam/
