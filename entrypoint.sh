@@ -48,33 +48,47 @@ mkdir -p \
 # ---------------------------------------------------
 # Mount models from Spaces (Lazy Loading via FUSE)
 # ---------------------------------------------------
-echo "BOOT: Attempting to mount models from Spaces..."
+echo "BOOT: Checking for FUSE device..."
 
-# Load fuse module just in case
-modprobe fuse 2>/dev/null || true
+# Check if /dev/fuse exists (Koyeb might not expose it)
+if [ -e /dev/fuse ]; then
+    echo "BOOT: /dev/fuse found. Attempting to mount models from Spaces..."
+    modprobe fuse 2>/dev/null || true
+    
+    # Try to mount the bucket
+    rclone mount \
+        ${REMOTE}:${SPACES_BUCKET}/models \
+        ${WORKSPACE}/models \
+        --vfs-cache-mode full \
+        --vfs-cache-max-size 50G \
+        --vfs-cache-max-age 168h \
+        --dir-cache-time 1m \
+        --attr-timeout 30s \
+        --buffer-size 512M \
+        --daemon \
+        --daemon-wait 5s \
+        --allow-other \
+        --s3-no-check-bucket \
+        --umask 022 \
+        2>/dev/null || true
 
-# Try to mount the bucket
-rclone mount \
-    ${REMOTE}:${SPACES_BUCKET}/models \
-    ${WORKSPACE}/models \
-    --vfs-cache-mode full \
-    --vfs-cache-max-size 50G \
-    --vfs-cache-max-age 168h \
-    --dir-cache-time 1m \
-    --attr-timeout 30s \
-    --buffer-size 512M \
-    --daemon \
-    --daemon-wait 10s \
-    --allow-other \
-    --s3-no-check-bucket \
-    --umask 022 \
-    || echo "WARN: rclone mount command failed..."
-
-# Check if mount actually succeeded
-if mountpoint -q ${WORKSPACE}/models; then
-    echo "✅ Models mounted successfully (lazy loading enabled). Writes will sync to Spaces."
+    # Check if mount actually succeeded
+    sleep 2
+    if mountpoint -q ${WORKSPACE}/models; then
+        echo "✅ Models mounted successfully (lazy loading enabled). Writes will sync to Spaces."
+    else
+        echo "⚠️ Mount failed, falling back to rclone copy..."
+        rclone copy \
+            ${REMOTE}:${SPACES_BUCKET}/models \
+            ${WORKSPACE}/models \
+            ${RCLONE_FLAGS} \
+            --ignore-existing \
+            --exclude "*.partial" \
+            --exclude "*.tmp" \
+            || true
+    fi
 else
-    echo "⚠️ Mount failed, falling back to rclone copy..."
+    echo "⚠️ /dev/fuse not found. Falling back to rclone copy..."
     rclone copy \
         ${REMOTE}:${SPACES_BUCKET}/models \
         ${WORKSPACE}/models \
@@ -166,7 +180,7 @@ sync_to_spaces() {
         rclone copy ${WORKSPACE}/user ${REMOTE}:${SPACES_BUCKET}/user ${RCLONE_FLAGS} --ignore-existing --exclude "*.partial" --log-level ERROR || true
 
         # If models mount failed, we fallback to copying models here
-        if ! mountpoint -q ${WORKSPACE}/models; then
+        if ! mountpoint -q ${WORKSPACE}/models 2>/dev/null; then
             echo "[SYNC] Uploading new models (fallback mode)..."
             rclone copy ${WORKSPACE}/models ${REMOTE}:${SPACES_BUCKET}/models ${RCLONE_FLAGS} --ignore-existing --exclude "*.partial" --exclude "*.tmp" --log-level ERROR || true
         fi
