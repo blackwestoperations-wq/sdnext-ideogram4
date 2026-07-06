@@ -51,20 +51,40 @@ mkdir -p \
 # Download models from Spaces (with --inplace to fix rename errors)
 # ---------------------------------------------------
 
-echo "BOOT: Downloading models from Spaces..."
+echo "BOOT: Mounting models from Spaces..."
 
-rclone copy \
+mkdir -p ${WORKSPACE}/models
+
+# Mount with VFS full cache (downloads on access, caches locally)
+rclone mount \
     ${REMOTE}:${SPACES_BUCKET}/models \
     ${WORKSPACE}/models \
-    ${RCLONE_FLAGS} \
-    --ignore-existing \
-    --exclude "*.partial" \
-    --exclude "*.tmp" \
-    --exclude ".DS_Store" \
-    --exclude "Thumbs.db" \
-    || echo "WARN: model sync had issues, continuing..."
+    --vfs-cache-mode full \
+    --vfs-cache-max-size 40G \
+    --vfs-cache-max-age 168h \
+    --dir-cache-time 1m \
+    --attr-timeout 30s \
+    --buffer-size 512M \
+    --daemon \
+    --allow-other \
+    --s3-no-check-bucket \
+    --umask 022 \
+    || echo "FATAL: rclone mount failed, falling back to copy"
 
-echo "BOOT: Models downloaded."
+# Check if mount succeeded
+sleep 2
+if mountpoint -q ${WORKSPACE}/models; then
+    echo "Models mounted successfully (lazy loading enabled)"
+else
+    echo "Mount failed, falling back to rclone copy..."
+    rclone copy \
+        ${REMOTE}:${SPACES_BUCKET}/models \
+        ${WORKSPACE}/models \
+        ${RCLONE_FLAGS} \
+        --ignore-existing \
+        --exclude "*.partial" \
+        || true
+fi
 
 # ---------------------------------------------------
 # Download workflows
