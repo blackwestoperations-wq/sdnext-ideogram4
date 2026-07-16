@@ -1,12 +1,40 @@
-#!/bin/bash
-set -euo pipefail
+#!/usr/bin/env bash
 
-# Koyeb injects $PORT; fall back to 8188 for local dev
+set -e
+
 PORT="${PORT:-8188}"
 
-echo "================================================"
-echo " ComfyUI  |  port: ${PORT}  |  CUDA: $(nvcc --version 2>/dev/null | grep release | awk '{print $6}' || echo 'n/a')"
-echo "================================================"
+echo
+echo "========================================="
+echo "ComfyUI starting..."
+echo "========================================="
+
+echo
+echo "Python:"
+python3 --version
+
+echo
+echo "Torch:"
+python3 - <<EOF
+import torch
+print(torch.__version__)
+print("CUDA:", torch.version.cuda)
+print("CUDA Available:", torch.cuda.is_available())
+if torch.cuda.is_available():
+    print("GPU:", torch.cuda.get_device_name(0))
+EOF
+
+echo
+echo "Compiler:"
+which gcc
+gcc --version
+
+echo
+echo "Working directory:"
+pwd
+
+echo
+echo "Launching ComfyUI..."
 
 cd /app/ComfyUI
 
