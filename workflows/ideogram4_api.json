@@ -1,0 +1,78 @@
+{
+  "_comment": "Ideogram 4 Text-to-Image. Defaults: 1024x1024, 20 steps, Default preset (mu=0.0, std=1.75). In n8n inject structured JSON prompt into node 24.",
+  "9": {
+    "inputs": { "vae_name": "flux2-vae.safetensors" },
+    "class_type": "VAELoader",
+    "_meta": { "title": "Load VAE" }
+  },
+  "14": {
+    "inputs": { "clip_name": "qwen3vl_8b_fp8_scaled.safetensors", "type": "ideogram4", "device": "default" },
+    "class_type": "CLIPLoader",
+    "_meta": { "title": "Load CLIP" }
+  },
+  "23": {
+    "inputs": { "unet_name": "ideogram4_fp8_scaled.safetensors", "weight_dtype": "default" },
+    "class_type": "UNETLoader",
+    "_meta": { "title": "Load Main UNet" }
+  },
+  "154": {
+    "inputs": { "unet_name": "ideogram4_unconditional_fp8_scaled.safetensors", "weight_dtype": "default" },
+    "class_type": "UNETLoader",
+    "_meta": { "title": "Load Unconditional UNet" }
+  },
+  "24": {
+    "inputs": { "text": "High level description here", "clip": ["14", 0] },
+    "class_type": "CLIPTextEncode",
+    "_meta": { "title": "CLIP Text Encode (Prompt)" }
+  },
+  "10": {
+    "inputs": { "conditioning": ["24", 0] },
+    "class_type": "ConditioningZeroOut",
+    "_meta": { "title": "ConditioningZeroOut" }
+  },
+  "157": {
+    "inputs": { "model": ["23", 0], "cfg": 3, "negative_strength": 0.7, "prior_strength": 1 },
+    "class_type": "CFGOverride",
+    "_meta": { "title": "CFGOverride" }
+  },
+  "155": {
+    "inputs": { "model": ["157", 0], "positive": ["24", 0], "model_negative": ["154", 0], "negative": ["10", 0], "cfg": 7 },
+    "class_type": "DualModelGuider",
+    "_meta": { "title": "DualModelGuider" }
+  },
+  "11": {
+    "inputs": { "width": 1024, "height": 1024, "batch_size": 1 },
+    "class_type": "EmptyFlux2LatentImage",
+    "_meta": { "title": "Empty Latent Image" }
+  },
+  "18": {
+    "inputs": { "noise_seed": 111222333, "control_after_generate": "randomize" },
+    "class_type": "RandomNoise",
+    "_meta": { "title": "Random Noise" }
+  },
+  "17": {
+    "inputs": { "steps": 20, "width": 1024, "height": 1024, "mu": 0.0, "std": 1.75 },
+    "class_type": "Ideogram4Scheduler",
+    "_meta": { "title": "Ideogram4Scheduler" }
+  },
+  "16": {
+    "inputs": { "sampler_name": "euler" },
+    "class_type": "KSamplerSelect",
+    "_meta": { "title": "Sampler Select" }
+  },
+  "12": {
+    "inputs": { "noise": ["18", 0], "guider": ["155", 0], "sampler": ["16", 0], "sigmas": ["17", 0], "latent_image": ["11", 0] },
+    "class_type": "SamplerCustomAdvanced",
+    "_meta": { "title": "Sampler" }
+  },
+  "13": {
+    "inputs": { "samples": ["12", 0], "vae": ["9", 0] },
+    "class_type": "VAEDecode",
+    "_meta": { "title": "VAE Decode" }
+  },
+  "158": {
+    "inputs": { "images": ["13", 0], "filename_prefix": "Ideogram_4" },
+    "class_type": "SaveImage",
+    "_meta": { "title": "Save Image" }
+  }
+}
